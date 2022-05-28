@@ -6,11 +6,12 @@ use std::thread;
 use pm::{DeviceInfo, MidiEvent, PortMidi};
 use std::net::TcpListener;
 use tungstenite::{accept, handshake::HandshakeRole, Error, HandshakeError, Message};
+use serde::Serialize;
 
 const HOST: &str = "127.0.0.1:9001";
-const MOCK_ENABLED: bool = true;
+const MOCK_ENABLED: bool = false;
 
-#[derive(Debug)]
+#[derive(Serialize, Debug)]
 enum Key {
     C,
     Cs,
@@ -56,7 +57,7 @@ struct ChannelMessage {
     device: DeviceInfo,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 #[allow(dead_code)]
 struct Note {
     octave: u8,
@@ -120,7 +121,10 @@ fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
                                     .expect("Couldn't receive channel message");
 
                                 for midi_event in channel_message.events {
-                                    let websocket_message = Message::Text(String::from(format!("Played note: {:?}", map_event_to_note(midi_event))));
+                                    let midi_note = map_event_to_note(midi_event);
+                                    let serialized_note = serde_json::to_string(&midi_note)
+                                        .expect("Unable to serialize note");
+                                    let websocket_message = Message::Text(serialized_note);
                                     socket.write_message(websocket_message)
                                         .expect("Write message failed");
                                 }
