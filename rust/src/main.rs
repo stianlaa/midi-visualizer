@@ -7,10 +7,6 @@ use pm::{DeviceInfo, MidiEvent, PortMidi};
 use std::net::TcpListener;
 use tungstenite::{accept, handshake::HandshakeRole, Error, HandshakeError, Message};
 
-// Todo:
-// - Read up on basic svelte setup, and adding websocket svelte
-// - Read up on exposing rust websocket with midi data
-
 const HOST: &str = "127.0.0.1:9001";
 
 #[derive(Debug)]
@@ -107,13 +103,19 @@ fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
             for stream_result in server.incoming() {
                 match stream_result {
                     Ok(stream) => {
-                        let mut socket = accept(stream).map_err(must_not_block).expect("Couldn't expect websocket");
-                        println!("Waiting for client connection");
+                        let mut socket = accept(stream)
+                            .map_err(must_not_block)
+                            .expect("Couldn't expect websocket");
+                        println!("Websocket client connected");
                         loop {
-                            let channel_message = rx_arc.lock().expect("Couldn't receive lock").recv().unwrap();
+                            let channel_message = rx_arc.lock()
+                                .expect("Couldn't acquire lock")
+                                .recv()
+                                .expect("Couldn't receive channel message");
                             for midi_event in channel_message.events {
-                                let test_message = String::from(format!("Played note: {:?}", map_event_to_note(midi_event)));
-                                socket.write_message(Message::Text(test_message)).expect("Write message failed");
+                                let websocket_message = Message::Text(String::from(format!("Played note: {:?}", map_event_to_note(midi_event))));
+                                socket.write_message(websocket_message)
+                                    .expect("Write message failed");
                             }
                             thread::sleep(Duration::from_millis(50));
                         }
@@ -135,8 +137,8 @@ fn main() {
     // Create websocket server thread, forwarding midi messages
     start_websocket_server(rx_channel);
 
+    println!("-= Midi broker started =-");
     loop {
-        println!("Running!");
         thread::sleep(Duration::from_secs(2));
     }
 }
