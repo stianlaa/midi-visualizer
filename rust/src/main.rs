@@ -8,6 +8,7 @@ use std::net::TcpListener;
 use tungstenite::{accept, handshake::HandshakeRole, Error, HandshakeError, Message};
 
 const HOST: &str = "127.0.0.1:9001";
+const MOCK_ENABLED: bool = true;
 
 #[derive(Debug)]
 enum Key {
@@ -108,16 +109,23 @@ fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
                             .expect("Couldn't expect websocket");
                         println!("Websocket client connected");
                         loop {
-                            let channel_message = rx_arc.lock()
-                                .expect("Couldn't acquire lock")
-                                .recv()
-                                .expect("Couldn't receive channel message");
-                            for midi_event in channel_message.events {
-                                let websocket_message = Message::Text(String::from(format!("Played note: {:?}", map_event_to_note(midi_event))));
-                                socket.write_message(websocket_message)
+                            if MOCK_ENABLED {
+                                socket.write_message(Message::Text(String::from("{\"octave\": 5, \"key\": \"C\"}")))
                                     .expect("Write message failed");
+                                thread::sleep(Duration::from_millis(1000));
+                            } else {
+                                let channel_message = rx_arc.lock()
+                                    .expect("Couldn't acquire lock")
+                                    .recv()
+                                    .expect("Couldn't receive channel message");
+
+                                for midi_event in channel_message.events {
+                                    let websocket_message = Message::Text(String::from(format!("Played note: {:?}", map_event_to_note(midi_event))));
+                                    socket.write_message(websocket_message)
+                                        .expect("Write message failed");
+                                }
+                                thread::sleep(Duration::from_millis(50));
                             }
-                            thread::sleep(Duration::from_millis(50));
                         }
                     }
                     Err(err) => println!("Stream error: {err:?}"),
