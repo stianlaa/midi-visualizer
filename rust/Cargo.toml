@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 portmidi = "^0.2"
+tungstenite = "0.17.2"
