@@ -11,6 +11,8 @@ use tungstenite::{accept, handshake::HandshakeRole, Error, HandshakeError, Messa
 // - Read up on basic svelte setup, and adding websocket svelte
 // - Read up on exposing rust websocket with midi data
 
+const HOST: &str = "127.0.0.1:9001";
+
 #[derive(Debug)]
 enum Key {
     C,
@@ -51,12 +53,14 @@ const TIMEOUT: Duration = Duration::from_millis(10);
 const BUF_LEN: usize = 1024;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct ChannelMessage {
     events: Vec<MidiEvent>,
     device: DeviceInfo,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Note {
     octave: u8,
     key: Key,
@@ -96,60 +100,26 @@ fn must_not_block<Role: HandshakeRole>(err: HandshakeError<Role>) -> Error {
 }
 
 fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
-    // TODO perhaps have to use arc, because rx_channel is moved into separate thread
     let rx_arc = Arc::new(Mutex::new(rx_channel));
     thread::spawn(move || {
-        let server = TcpListener::bind("127.0.0.1:9001").unwrap();
-        // TODO should be made indepndent of incoming messages, should have a (list?) of clients, and send to those
+        let server = TcpListener::bind(HOST).unwrap();
         loop {
             for stream_result in server.incoming() {
                 match stream_result {
                     Ok(stream) => {
-                        let rx_channel_lock = rx_arc.lock();
-
-                        // Should keep list of connected clients
-
-                        // Should publish to all those clients
-
-                        // TODO first test looping response, after client connect
-                        let mut inc = 0;
-
                         let mut socket = accept(stream).map_err(must_not_block).expect("Couldn't expect websocket");
                         println!("Waiting for client connection");
                         loop {
-                            /*
-                            match socket.read_message().expect("Can't ready message") {
-                                received_message @ Message::Text(_) => {
-                                    //let channel_message = rx_channel_lock.recv().unwrap();
-                                    // for midi_event in channel_message.events {
-                                    //      let message_string = format!("Played note: {:?}", map_event_to_note(midi_event));
-                                    // }
-
-                                    println!("Received from client: {:?}", received_message);
-                                    let test_message: String = String::from("Placeholder response");
-                                    socket.write_message(Message::Text(test_message));
-                                }
-                                Message::Ping(_) | Message::Pong(_) | Message::Close(_) | Message::Frame(_) | Message::Binary(_) => {}
+                            let channel_message = rx_arc.lock().expect("Couldn't receive lock").recv().unwrap();
+                            for midi_event in channel_message.events {
+                                let test_message = String::from(format!("Played note: {:?}", map_event_to_note(midi_event)));
+                                socket.write_message(Message::Text(test_message)).expect("Write message failed");
                             }
-
-                             */
-
-                            inc += 1;
-                            thread::sleep(Duration::from_secs(2));
-                            let test_message = String::from(format!("Placeholder response: {:?}", inc));
-                            socket.write_message(Message::Text(test_message))
+                            thread::sleep(Duration::from_millis(50));
                         }
                     }
                     Err(err) => println!("Stream error: {err:?}"),
                 }
-
-
-                // TODO improve
-                // let message = rx_channel.recv().unwrap();
-                //for event in message.events {
-                //    // println!("[{}] {:?}", message.device, event);
-                //    println!("{:?}", map_event_to_note(event));
-                //}
             }
         }
     });
