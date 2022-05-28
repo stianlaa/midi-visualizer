@@ -62,31 +62,38 @@ struct ChannelMessage {
 struct Note {
     octave: u8,
     key: Key,
+    pressed: bool,
+    timestamp: u32
 }
 
 fn map_event_to_note(event: MidiEvent) -> Note {
     let octave: u8 = event.message.data1 / 12;
     let key = Key::from_u8(event.message.data1 % 12);
-    Note { octave, key }
+    let pressed = event.message.status == 144;
+    let timestamp = event.timestamp;
+    Note { octave, key, pressed, timestamp }
 }
 
 fn start_listener(context: PortMidi, tx_channel: mpsc::Sender<ChannelMessage>) {
-    thread::spawn(move || {
-        let in_ports = context
-            .devices()
-            .unwrap()
-            .into_iter()
-            .filter_map(|dev| context.input_port(dev, BUF_LEN).ok())
-            .collect::<Vec<_>>();
-        loop {
-            for port in &in_ports {
-                if let Ok(Some(events)) = port.read_n(BUF_LEN) {
-                    tx_channel.send(ChannelMessage { device: port.device(), events }).unwrap();
+    thread::Builder::new()
+        .name("midi-listener".to_string())
+        .spawn(move || {
+            let in_ports = context
+                .devices()
+                .unwrap()
+                .into_iter()
+                .filter_map(|dev| context.input_port(dev, BUF_LEN).ok())
+                .collect::<Vec<_>>();
+            loop {
+                for port in &in_ports {
+                    if let Ok(Some(events)) = port.read_n(BUF_LEN) {
+                        tx_channel.send(ChannelMessage { device: port.device(), events }).unwrap();
+                    }
                 }
+                thread::sleep(TIMEOUT);
             }
-            thread::sleep(TIMEOUT);
-        }
-    });
+        })
+        .expect("Building thread failed");
 }
 
 // TODO wrong mapping, already closed is incorrect
@@ -99,9 +106,13 @@ fn must_not_block<Role: HandshakeRole>(err: HandshakeError<Role>) -> Error {
 
 fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
     let rx_arc = Arc::new(Mutex::new(rx_channel));
-    thread::spawn(move || {
-        let server = TcpListener::bind(HOST).unwrap();
-        loop {
+    // Todo, might want to change to this producer & receiver: https://users.rust-lang.org/t/having-multiple-receivers-listening-to-the-same-sender-in-rust/61317/3
+    // and move thread spawning inside incoming server request, that way we would spawn a new handling thread.
+    // current problem is that only one instance of Receive can exist
+    thread::Builder::new()
+        .name("websocket-server".to_string())
+        .spawn(move || {
+            let server = TcpListener::bind(HOST).expect("Unable to bind tcp listener");
             for stream_result in server.incoming() {
                 match stream_result {
                     Ok(stream) => {
@@ -128,15 +139,15 @@ fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
                                     socket.write_message(websocket_message)
                                         .expect("Write message failed");
                                 }
-                                thread::sleep(Duration::from_millis(50));
+                                thread::sleep(Duration::from_millis(20));
                             }
                         }
                     }
                     Err(err) => println!("Stream error: {err:?}"),
                 }
             }
-        }
-    });
+        })
+        .expect("Building thread failed");
 }
 
 fn main() {
