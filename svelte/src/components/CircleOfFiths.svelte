@@ -2,7 +2,7 @@
     import { w3cwebsocket as W3CWebSocket } from "websocket";
 
     // Handling websocket midi data
-    let midi_keys = {
+    let midiKeys = {
         C: { pressed: false, timestamp: 0 },
         Cs: { pressed: false, timestamp: 0 },
         D: { pressed: false, timestamp: 0 },
@@ -34,8 +34,8 @@
     client.onmessage = function (e) {
         let payload = JSON.parse(e.data);
         if (typeof e.data === "string") {
-            let message_key = payload["key"];
-            midi_keys[message_key] = payload;
+            let messageKey = payload["key"];
+            midiKeys[messageKey] = payload;
         }
     };
 
@@ -44,60 +44,39 @@
     const sin = Math.sin;
     const pi = Math.PI;
 
-    const f_matrix_times = ([[a, b], [c, d]], [x, y]) => [
+    const multiplyMatrix = ([[a, b], [c, d]], [x, y]) => [
         a * x + b * y,
         c * x + d * y,
     ];
-    const f_rotate_matrix = (x) => [
+    const rotateMatrix = (x) => [
         [cos(x), -sin(x)],
         [sin(x), cos(x)],
     ];
-    const f_vec_add = ([a1, a2], [b1, b2]) => [a1 + b1, a2 + b2];
+    const addVector = ([a1, a2], [b1, b2]) => [a1 + b1, a2 + b2];
 
-    const create_svg_arc = function (
-        radius,
-        centerx,
-        centery,
-        start_angle,
-        sweep,
-        rotation
-    ) {
+    const createSvgArc = function (r, cx, cy, start, sweep, rot) {
         sweep = sweep % (2 * pi);
-        const rotMatrix = f_rotate_matrix(rotation);
-        const [sX, sY] = f_vec_add(
-            f_matrix_times(rotMatrix, [
-                radius * cos(start_angle),
-                radius * sin(start_angle),
-            ]),
-            [centerx, centery]
+        const rotMatrix = rotateMatrix(rot);
+        const [sX, sY] = addVector(
+            multiplyMatrix(rotMatrix, [r * cos(start), r * sin(start)]),
+            [cx, cy]
         );
-        const [eX, eY] = f_vec_add(
-            f_matrix_times(rotMatrix, [
-                radius * cos(start_angle + sweep),
-                radius * sin(start_angle + sweep),
+        const [eX, eY] = addVector(
+            multiplyMatrix(rotMatrix, [
+                r * cos(start + sweep),
+                r * sin(start + sweep),
             ]),
-            [centerx, centery]
+            [cx, cy]
         );
 
         const fA = sweep > pi ? 1 : 0;
         const fS = sweep > 0 ? 1 : 0;
-        return [
-            "M",
-            sX,
-            sY,
-            "A",
-            radius,
-            radius,
-            (rotation / (2 * pi)) * 360,
-            fA,
-            fS,
-            eX,
-            eY,
-        ].join(" ");
+        const rotAng = (rot / (2 * pi)) * 360;
+        return ["M", sX, sY, "A", r, r, rotAng, fA, fS, eX, eY].join(" ");
     };
 
-    const width = 500;
     const height = 500;
+    const width = height;
     const depth = width / 8;
     const radius = width / 2;
 
@@ -115,31 +94,32 @@
         "DarkOrchid",
         "RoyalBlue",
     ];
+
     // 12 segments, equally spaced
-    let segment_info = [];
-    for (let i = 0; i < 12; i++) {
-        let offset_rotation = (6 * pi) / 4;
-        let segment_width = (2 * pi) / 12;
-        let segment_angle =
-            offset_rotation + i * segment_width - segment_width / 2;
+    $: segmentInfoList = [...Array(12).keys()].map((i) => {
+        let ci = (i * 5) % 12; // The circle of fifths changes 5 half-steps between segments
+
+        const rotationOffset = (6 * pi) / 4;
+        const segmentWidth = (2 * pi) / 12;
+        let segmentAngle = rotationOffset - i * segmentWidth - segmentWidth / 2;
 
         // Text
-        let x =
-            width / 2 - 0.85 * radius * cos(segment_angle + segment_width / 2);
-        let y =
-            height / 2 + 0.85 * radius * sin(segment_angle + segment_width / 2);
-
-        segment_info.push({
-            path: create_svg_arc(
+        const textRad = 0.85 * radius;
+        let x = width / 2 + textRad * cos(segmentAngle + segmentWidth / 2);
+        let y = height / 2 + textRad * sin(segmentAngle + segmentWidth / 2);
+        return {
+            path: createSvgArc(
                 radius - depth / 2, // radius, adjusted for depth
                 width / 2, // center x
                 height / 2, // center y
                 0, // start angle, in radian.
-                segment_width * 0.95, // angle to sweep, in radian. positive./
-                segment_angle // rotation on the whole, in radian
+                segmentWidth * 0.95, // angle to sweep, in radian. positive./
+                segmentAngle // rotation on the whole, in radian
             ),
-            color: segment_colors[i],
-            text_props: {
+            color: Object.values(midiKeys)[ci].pressed
+                ? segment_colors[i]
+                : "grey",
+            textProps: {
                 x: x,
                 y: y,
                 "transform-origin": `${x} ${y}`,
@@ -147,18 +127,10 @@
                 "font-size": "1.5rem",
                 "z-index": 5,
             },
-            text: Object.keys(midi_keys)[(i * 5) % 12],
-        });
-    }
-
-    /*
-        <div>
-        {#each Object.entries(midi_keys) as [key, midi_data]}
-            <p>{key}, {midi_data.pressed}, {midi_data.timestamp}</p>
-        {/each}
-        </div>
-
-    */
+            key: Object.keys(midiKeys)[ci],
+            midiValue: Object.values(midiKeys)[ci],
+        };
+    });
 </script>
 
 <main>
@@ -166,11 +138,11 @@
 
     <div>
         <svg style="stroke-width:{depth};" {width} {height}>
-            {#each segment_info as segment_info}
-                <path d={segment_info.path} stroke={segment_info.color} />
+            {#each segmentInfoList as segmentInfo}
+                <path d={segmentInfo.path} stroke={segmentInfo.color} />
             {/each}
-            {#each segment_info as segment_info}
-                <text {...segment_info.text_props}>{segment_info.text}</text>
+            {#each segmentInfoList as segmentInfo}
+                <text {...segmentInfo.textProps}>{segmentInfo.key}</text>
             {/each}
         </svg>
     </div>
