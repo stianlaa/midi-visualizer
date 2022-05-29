@@ -63,7 +63,7 @@ struct Note {
     octave: u8,
     key: Key,
     pressed: bool,
-    timestamp: u32
+    timestamp: u32,
 }
 
 fn map_event_to_note(event: MidiEvent) -> Note {
@@ -96,7 +96,6 @@ fn start_listener(context: PortMidi, tx_channel: mpsc::Sender<ChannelMessage>) {
         .expect("Building thread failed");
 }
 
-// TODO wrong mapping, already closed is incorrect
 fn must_not_block<Role: HandshakeRole>(err: HandshakeError<Role>) -> Error {
     match err {
         HandshakeError::Interrupted(_) => Error::AlreadyClosed,
@@ -104,7 +103,7 @@ fn must_not_block<Role: HandshakeRole>(err: HandshakeError<Role>) -> Error {
     }
 }
 
-fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
+fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>, mock: bool) {
     let rx_arc = Arc::new(Mutex::new(rx_channel));
     // Todo, might want to change to this producer & receiver: https://users.rust-lang.org/t/having-multiple-receivers-listening-to-the-same-sender-in-rust/61317/3
     // and move thread spawning inside incoming server request, that way we would spawn a new handling thread.
@@ -121,7 +120,7 @@ fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>) {
                             .expect("Couldn't expect websocket");
                         println!("Websocket client connected");
                         loop {
-                            if MOCK_ENABLED {
+                            if mock {
                                 socket.write_message(Message::Text(String::from("{\"octave\": 5, \"key\": \"C\"}")))
                                     .expect("Write message failed");
                                 thread::sleep(Duration::from_millis(1000));
@@ -158,7 +157,7 @@ fn main() {
     start_listener(context, tx_channel);
 
     // Create websocket server thread, forwarding midi messages
-    start_websocket_server(rx_channel);
+    start_websocket_server(rx_channel, MOCK_ENABLED);
 
     println!("-= Midi broker started =-");
     loop {
