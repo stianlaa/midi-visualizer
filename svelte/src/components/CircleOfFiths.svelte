@@ -80,7 +80,7 @@
     const depth = width / 8;
     const radius = width / 2;
 
-    const segment_colors = [
+    const segmentColors = [
         "Aqua",
         "Aquamarine",
         "DarkCyan",
@@ -117,7 +117,7 @@
                 segmentAngle // rotation on the whole, in radian
             ),
             color: Object.values(midiKeys)[ci].pressed
-                ? segment_colors[i]
+                ? segmentColors[i]
                 : "grey",
             textProps: {
                 x: x,
@@ -126,6 +126,7 @@
                 "text-anchor": "middle",
                 "font-size": "1.5rem",
                 "z-index": 5,
+                "font-family": "'Brush Script MT', cursive",
             },
             key: Object.keys(midiKeys)[ci],
             midiValue: Object.values(midiKeys)[ci],
