@@ -62,6 +62,7 @@ struct ChannelMessage {
 struct Note {
     octave: u8,
     key: Key,
+    index: u8,
     pressed: bool,
     timestamp: u32,
 }
@@ -69,9 +70,10 @@ struct Note {
 fn map_event_to_note(event: MidiEvent) -> Note {
     let octave: u8 = event.message.data1 / 12;
     let key = Key::from_u8(event.message.data1 % 12);
+    let index = event.message.data1;
     let pressed = event.message.status == 144;
     let timestamp = event.timestamp;
-    Note { octave, key, pressed, timestamp }
+    Note { octave, key, index, pressed, timestamp }
 }
 
 fn start_listener(context: PortMidi, tx_channel: mpsc::Sender<ChannelMessage>) {
@@ -121,7 +123,7 @@ fn start_websocket_server(rx_channel: mpsc::Receiver<ChannelMessage>, mock: bool
                         println!("Websocket client connected");
                         loop {
                             if mock {
-                                socket.write_message(Message::Text(String::from("{\"octave\": 5, \"key\": \"C\"}")))
+                                socket.write_message(Message::Text(String::from("{\"octave\": 5, \"key\": \"C\", \"pressed\": true, \"index\": 36}")))
                                     .expect("Write message failed");
                                 thread::sleep(Duration::from_millis(1000));
                             } else {

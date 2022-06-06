@@ -1,24 +1,22 @@
 <script>
     import { w3cwebsocket as W3CWebSocket } from "websocket";
 
-    // Handling websocket midi data
-    let midiKeys = {
-        C: { pressed: false, timestamp: 0 },
-        Cs: { pressed: false, timestamp: 0 },
-        D: { pressed: false, timestamp: 0 },
-        Ds: { pressed: false, timestamp: 0 },
-        E: { pressed: false, timestamp: 0 },
-        F: { pressed: false, timestamp: 0 },
-        Fs: { pressed: false, timestamp: 0 },
-        G: { pressed: false, timestamp: 0 },
-        Gs: { pressed: false, timestamp: 0 },
-        A: { pressed: false, timestamp: 0 },
-        As: { pressed: false, timestamp: 0 },
-        B: { pressed: false, timestamp: 0 },
+    const firstKeyIndex = 36; // Smaller keyboards start at a higher octave
+    const keyboardKeyNum = 60;
+    const octaves = keyboardKeyNum/12;
+
+    const initializeKeys = function (startIndex, numKeys) {
+        let k = {};
+        for (let i = startIndex; i < startIndex+numKeys; i++) {
+            k[i] = { pressed: false, timestamp: 0, index: i};
+        }
+        return k;
     };
+    const keyList = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"];
+    let midiKeys = initializeKeys(firstKeyIndex, keyboardKeyNum);
 
+    // Handling websocket midi data
     var client = new W3CWebSocket("ws://localhost:9001/");
-
     client.onerror = function () {
         console.log("Connection Error");
     };
@@ -34,8 +32,7 @@
     client.onmessage = function (e) {
         let payload = JSON.parse(e.data);
         if (typeof e.data === "string") {
-            let messageKey = payload["key"];
-            midiKeys[messageKey] = payload;
+            midiKeys[firstKeyIndex + parseInt(payload.index)] = payload;
         }
     };
 
@@ -75,10 +72,11 @@
         return ["M", sX, sY, "A", r, r, rotAng, fA, fS, eX, eY].join(" ");
     };
 
-    const height = 500;
+    const height = 650;
     const width = height;
-    const depth = width / 8;
-    const radius = width / 2;
+    const outerRadius = width / 2;
+    const innerRadius = width / 4;
+    const depth = (outerRadius - innerRadius)/octaves;
 
     const segmentColors = [
         "Aqua",
@@ -95,19 +93,21 @@
         "RoyalBlue",
     ];
 
-    // 12 segments, equally spaced
-    $: segmentInfoList = [...Array(12).keys()].map((i) => {
-        let ci = (i * 5) % 12; // The circle of fifths changes 5 half-steps between segments
+    // define segments equally spaced
+    $: segmentInfoList = [...Array(keyboardKeyNum).keys()].map((k) => {
+        const i = k + firstKeyIndex;
+        const ci = (i * 5) % 12; // The circle of fifths changes 5 half-steps between segments
+        const radius = innerRadius + ((outerRadius - innerRadius) * k) / keyboardKeyNum;
 
         const rotationOffset = (6 * pi) / 4;
         const segmentWidth = (2 * pi) / 12;
-        let segmentAngle = rotationOffset - i * segmentWidth - segmentWidth / 2;
+        const segmentAngle = rotationOffset - i * segmentWidth - segmentWidth / 2;
 
         // Text
         const textRad = 0.85 * radius;
-        let x = width / 2 + textRad * cos(segmentAngle + segmentWidth / 2);
-        let y = height / 2 + textRad * sin(segmentAngle + segmentWidth / 2);
-        return {
+        const x = width / 2 + textRad * cos(segmentAngle + segmentWidth / 2);
+        const y = height / 2 + textRad * sin(segmentAngle + segmentWidth / 2);
+        let segmentInfo = {
             path: createSvgArc(
                 radius - depth / 2, // radius, adjusted for depth
                 width / 2, // center x
@@ -116,10 +116,13 @@
                 segmentWidth * 0.95, // angle to sweep, in radian. positive./
                 segmentAngle // rotation on the whole, in radian
             ),
-            color: Object.values(midiKeys)[ci].pressed
-                ? segmentColors[i]
-                : "grey",
-            textProps: {
+            color: midiKeys[i].pressed
+                ? segmentColors[i%12]
+                : "grey"
+        };
+
+        if (i >= 36 & i < 48) {
+            segmentInfo["textProps"] = {
                 x: x,
                 y: y,
                 "transform-origin": `${x} ${y}`,
@@ -127,15 +130,15 @@
                 "font-size": "1.5rem",
                 "z-index": 5,
                 "font-family": "'Brush Script MT', cursive",
-            },
-            key: Object.keys(midiKeys)[ci],
-            midiValue: Object.values(midiKeys)[ci],
+            };
+            segmentInfo["key"] = keyList[ci];
         };
+        return segmentInfo;
     });
 </script>
 
 <main>
-    <h1>The Circle of fifths!</h1>
+    <h1>The Spiral of fifths!</h1>
 
     <div>
         <svg style="stroke-width:{depth};" {width} {height}>
@@ -146,6 +149,7 @@
                 <text {...segmentInfo.textProps}>{segmentInfo.key}</text>
             {/each}
         </svg>
+        <div>{JSON.stringify(midiKeys)}</div>
     </div>
 </main>
 
